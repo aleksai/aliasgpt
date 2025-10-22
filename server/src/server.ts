@@ -19,18 +19,22 @@ import {
   type ReadResourceRequest,
   type Resource,
   type ResourceTemplate,
-  type Tool
+  type Tool,
+  type ToolInputSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 type AliasWidget = {
   id: string;
+  hash: string;
   title: string;
+  description: string;
   templateUri: string;
   invoking: string;
   invoked: string;
   html: string;
   responseText: string;
+  toolInputSchema: ToolInputSchema;
 };
 
 function widgetMeta(widget: AliasWidget) {
@@ -56,7 +60,6 @@ function widgetHTML(widget: AliasWidget) {
 <script type="module">
 ${js}
 </script>`;
-// make sure your bundle reads from `openaiToolOutput` or `openai.toolOutput`
 }
 
 const portEnv = Number(process.env.PORT ?? 8000);
@@ -68,10 +71,23 @@ const widgets: AliasWidget[] = [
     id: "alias-game",
     hash: "6ad9",
     title: "Alias",
+    description: "Alias game. User describing, ChatGPT trying to guess.",
     templateUri: "ui://widget/alias-game.html",
-    invoking: "Preparing a round",
-    invoked: "Game is on",
-    responseText: "Let's play!"
+    invoking: "Aliasing...",
+    invoked: "Aliasing complete",
+    responseText: "Let's play!",
+    html: "",
+    toolInputSchema: {
+      type: "object",
+      properties: {
+        guess: {
+          type: "string",
+          description: "The guess of the target",
+          required: false
+        },
+      },
+      additionalProperties: false
+    }
   }
 ];
 
@@ -83,25 +99,14 @@ widgets.forEach((widget) => {
   widgetsByUri.set(widget.templateUri, widget);
 });
 
-const toolInputSchema = {
-  type: "object",
-  properties: {
-    message: {
-      type: "string",
-      description: "Optional message to display with the widget."
-    }
-  },
-  additionalProperties: false
-} as const;
-
 const toolInputParser = z.object({
-  message: z.string()
+  guess: z.string().optional()
 });
 
 const tools: Tool[] = widgets.map((widget) => ({
   name: widget.id,
-  description: widget.title,
-  inputSchema: toolInputSchema,
+  description: widget.description,
+  inputSchema: widget.toolInputSchema,
   title: widget.title,
   _meta: widgetMeta(widget)
 }));
@@ -184,7 +189,7 @@ function createAliasServer(): Server {
         }
       ],
       structuredContent: {
-        message: args.message
+        guess: args.guess
       },
       _meta: widgetMeta(widget)
     };
