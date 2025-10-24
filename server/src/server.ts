@@ -22,19 +22,12 @@ import {
   type Tool,
   type ToolInputSchema
 } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
 
-type AliasWidget = {
-  id: string;
-  hash: string;
-  title: string;
-  description: string;
-  templateUri: string;
-  invoking: string;
-  invoked: string;
-  html: string;
-  responseText: string;
-  toolInputSchema: ToolInputSchema;
+import widgets from "./widgets";
+
+type SessionRecord = {
+  server: Server;
+  transport: SSEServerTransport;
 };
 
 function widgetMeta(widget: AliasWidget) {
@@ -62,45 +55,12 @@ ${js}
 </script>`;
 }
 
-const portEnv = Number(process.env.PORT ?? 8000);
-const port = Number.isFinite(portEnv) ? portEnv : 8000;
-const baseUrl = "";
-
-const widgets: AliasWidget[] = [
-  {
-    id: "alias-game",
-    hash: "6ad9",
-    title: "Alias",
-    description: "Alias game. User describing, ChatGPT trying to guess.",
-    templateUri: "ui://widget/alias-game.html",
-    invoking: "Aliasing...",
-    invoked: "Aliasing complete",
-    responseText: "Let's play!",
-    html: "",
-    toolInputSchema: {
-      type: "object",
-      properties: {
-        guess: {
-          type: "string",
-          description: "The guess of the target",
-          required: false
-        },
-      },
-      additionalProperties: false
-    }
-  }
-];
-
 const widgetsById = new Map<string, AliasWidget>();
 const widgetsByUri = new Map<string, AliasWidget>();
 
 widgets.forEach((widget) => {
   widgetsById.set(widget.id, widget);
   widgetsByUri.set(widget.templateUri, widget);
-});
-
-const toolInputParser = z.object({
-  guess: z.string().optional()
 });
 
 const tools: Tool[] = widgets.map((widget) => ({
@@ -179,7 +139,7 @@ function createAliasServer(): Server {
       throw new Error(`Unknown tool: ${request.params.name}`);
     }
 
-    const args = toolInputParser.parse(request.params.arguments ?? {});
+    const structuredContent = widget.toolInputParser.parse(request.params.arguments ?? {});
 
     return {
       content: [
@@ -188,20 +148,13 @@ function createAliasServer(): Server {
           text: widget.responseText
         }
       ],
-      structuredContent: {
-        guess: args.guess
-      },
+      structuredContent,
       _meta: widgetMeta(widget)
     };
   });
 
   return server;
 }
-
-type SessionRecord = {
-  server: Server;
-  transport: SSEServerTransport;
-};
 
 const sessions = new Map<string, SessionRecord>();
 
@@ -302,6 +255,9 @@ httpServer.on("clientError", (err: Error, socket) => {
   console.error("HTTP client error", err);
   socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
 });
+
+const portEnv = Number(process.env.PORT ?? 8000);
+const port = Number.isFinite(portEnv) ? portEnv : 8000;
 
 httpServer.listen(port, () => {
   console.log(`AliasGPT MCP server listening on http://localhost:${port}`);
